@@ -2,6 +2,7 @@
 
 // Copyright 2009-2012  Karel Vesely
 //                2015  Yajie Miao
+//                2017  Jayadev Billa (added LSTM pointwise ops kernel)
 
 // See ../../COPYING for clarification regarding multiple authors
 //
@@ -29,7 +30,7 @@
 namespace eesen {
 
 /*
- * CUDA functions for Matrix 
+ * CUDA functions for Matrix
  */
 inline void cuda_copy_from_mat(dim3 Gr, dim3 Bl, float* mat_out, const double* mat_in, MatrixDim d_out, MatrixDim d_in) {
   cuda_copy_from_mat_fd(Gr, Bl, mat_out, mat_in, d_out, d_in);
@@ -95,7 +96,7 @@ inline void cuda_mul_rows_vec(dim3 Gr, dim3 Bl, double *mat, const double *scale
 
 inline void cuda_add_vec_to_rows(dim3 Gr, dim3 Bl, float alpha, const float *row, float beta, float *dst, MatrixDim d) { cudaF_add_vec_to_rows(Gr,Bl,alpha,row,beta,dst,d); }
 inline void cuda_add_vec_to_rows(dim3 Gr, dim3 Bl, double alpha, const double *row, double beta, double *dst, MatrixDim d) { cudaD_add_vec_to_rows(Gr,Bl,alpha,row,beta,dst,d); }
- 
+
 /*
  * CuVector
  */
@@ -113,8 +114,8 @@ inline void cuda_vec_min(const double* v, double* value, int dim) { cudaD_vec_mi
 inline void cuda_vec_max(const float* v, float* value, int dim) { cudaF_vec_max(v,value,dim); }
 inline void cuda_vec_max(const double* v, double* value, int dim) { cudaD_vec_max(v,value,dim); }
 
-inline void cuda_add_diag_mat_mat(int Gr, int Bl, float alpha, float* v, int v_dim, const float* M, 
-                                  int M_cols, int M_row_stride, int M_col_stride, const float *N, int N_row_stride, 
+inline void cuda_add_diag_mat_mat(int Gr, int Bl, float alpha, float* v, int v_dim, const float* M,
+                                  int M_cols, int M_row_stride, int M_col_stride, const float *N, int N_row_stride,
                                   int N_col_stride, int threads_per_element, float beta) {
   cudaF_add_diag_mat_mat(Gr, Bl, alpha, v, v_dim, M, M_cols, M_row_stride, M_col_stride, N, N_row_stride,
                          N_col_stride, threads_per_element, beta);
@@ -184,12 +185,59 @@ inline void cuda_copy(dim3 Gr, dim3 Bl, double *y, const double *x, const int32_
 inline void cuda_add_mat(dim3 Gr, dim3 Bl, float alpha, const float *src, float *dst, MatrixDim d, int src_stride, int A_trans) { cudaF_add_mat(Gr,Bl,alpha,src,dst,d,src_stride, A_trans); }
 inline void cuda_add_mat(dim3 Gr, dim3 Bl, double alpha, const double *src, double *dst, MatrixDim d, int src_stride, int A_trans) { cudaD_add_mat(Gr,Bl,alpha,src,dst,d,src_stride, A_trans); }
 
+inline void cuda_propagate_lstm_pointwiseops(dim3 Gr, dim3 Bl, float *yi, float *yf, float *yg, float *yo, float *yc, float *yh, float *ym,
+                                        const float *ycr, const float *pi, const float *pf,  const float *po, const float *rm, MatrixDim mat_dim,
+                                  int mat2_row_stride, int mat2_col_stride, const bool nml, cudaStream_t &stream
+                                  ) {
+    cudaF_propagate_lstm_pointwiseops(Gr, Bl, yi, yf, yg, yo, yc, yh, ym, ycr, pi, pf, po, rm, mat_dim,
+                           mat2_row_stride, mat2_col_stride, nml, stream);
+}
+
+inline void cuda_propagate_lstm_pointwiseops_nodrop(dim3 Gr, dim3 Bl, float *yi, float *yf, float *yg, float *yo, float *yc, float *yh, float *ym,
+                                        const float *ycr, const float *pi, const float *pf,  const float *po, MatrixDim mat_dim,
+                                        cudaStream_t &stream
+                                  ) {
+    cudaF_propagate_lstm_pointwiseops_nodrop(Gr, Bl, yi, yf, yg, yo, yc, yh, ym, ycr, pi, pf, po,  mat_dim,
+                            stream);
+}
+
+inline void cuda_backpropagate_lstm_pointwiseops(dim3 Gr, dim3 Bl, const float *yi, const float *yf, const float *yg, const float *yo,
+                                                const float *yc, const float *yh, const float *ym,
+                                                float *di, float *df, float *dg, float *d_o, float *dc, float *dh, float *dm,
+                                                float *dcm, const float *dir, const float *dfr, const float *dcr,
+                                                const float *dcmr, const float *yfr, const float *ycr,
+                                                const float *pi, const float *pf,  const float *po, const float *rm, MatrixDim mat_dim,
+                                                int mat2_row_stride, int mat2_col_stride, const bool nml, cudaStream_t &stream
+                                                ) {
+
+    cudaF_backpropagate_lstm_pointwiseops(Gr, Bl, yi, yf, yg, yo, yc, yh, ym, di, df, dg, d_o, dc, dh, dm,
+                                          dcm, dir, dfr, dcr, dcmr, yfr, ycr, pi, pf, po, rm, mat_dim,
+                                          mat2_row_stride, mat2_col_stride, nml, stream);
+
+}
+
+inline void cuda_backpropagate_lstm_pointwiseops_nodrop(dim3 Gr, dim3 Bl, const float *yi, const float *yf, const float *yg, const float *yo,
+                                                const float *yc, const float *yh, const float *ym,
+                                                float *di, float *df, float *dg, float *d_o, float *dc, float *dh, float *dm,
+                                                float *dcm, const float *dir, const float *dfr, const float *dcr,
+                                                const float *dcmr, const float *yfr, const float *ycr,
+                                                const float *pi, const float *pf,  const float *po, MatrixDim mat_dim,
+                                                cudaStream_t &stream
+                                                ) {
+
+    cudaF_backpropagate_lstm_pointwiseops_nodrop(Gr, Bl, yi, yf, yg, yo, yc, yh, ym, di, df, dg, d_o, dc, dh, dm,
+                                          dcm, dir, dfr, dcr, dcmr, yfr, ycr, pi, pf, po, mat_dim,
+                                          stream);
+
+}
+
 inline void cuda_add_mat_diag_vec(dim3 Gr, dim3 Bl, float alpha, float *mat, MatrixDim mat_dim,
                                   const float *mat2, int mat2_row_stride, int mat2_col_stride,
                                   const float *vec,  float beta) {
     cudaF_add_mat_diag_vec(Gr, Bl, alpha, mat, mat_dim, mat2,
                            mat2_row_stride, mat2_col_stride, vec, beta);
 }
+
 inline void cuda_add_mat_diag_vec(dim3 Gr, dim3 Bl, double alpha, double *mat, MatrixDim mat_dim,
                                   const double *mat2, int mat2_row_stride, int mat2_col_stride,
                                   const double *vec,  double beta) {

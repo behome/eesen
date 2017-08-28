@@ -1,6 +1,7 @@
 // net/bilstm-layer.h
 
 // Copyright 2015   Yajie Miao, Hang Su
+//           2017  Jayadev Billa 
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -881,6 +882,11 @@ protected:
 
     CuMatrix<BaseFloat> d_h_mask;
     CuMatrix<BaseFloat> d_c_mask;
+
+    CuMatrix<BaseFloat> d_h_mask_fw;
+    CuMatrix<BaseFloat> d_c_mask_fw;
+    CuMatrix<BaseFloat> d_h_mask_bw;
+    CuMatrix<BaseFloat> d_c_mask_bw;
 
     // parameters of the forward layer
     CuMatrix<BaseFloat> wei_gifo_x_fw_;

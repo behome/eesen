@@ -3,6 +3,7 @@
 // Copyright 2009-2012  Karel Vesely
 //                2013  Johns Hopkins University (author: Daniel Povey)
 //                2015  Yajie Miao
+//                2017  Jayadev Billa (added LSTM pointwise ops kernel)
 
 // See ../../COPYING for clarification regarding multiple authors
 //
@@ -36,6 +37,48 @@
 
 namespace eesen {
 
+void PropagatePointwiseOpsLSTM(CuSubMatrix<BaseFloat> &y_i, CuSubMatrix<BaseFloat> &y_f,
+                          CuSubMatrix<BaseFloat> &y_g, CuSubMatrix<BaseFloat> &y_o,
+                          CuSubMatrix<BaseFloat> &y_c, CuSubMatrix<BaseFloat> &y_h,
+                          CuSubMatrix<BaseFloat> &y_m,  const CuSubMatrix<BaseFloat> &ycr,
+                          const CuVector<BaseFloat> &p_i, const CuVector<BaseFloat> &p_f,
+                          const CuVector<BaseFloat> &p_o, const CuSubMatrix<BaseFloat> &r_mask, const bool nml, cudaStream_t &stream);
+
+void PropagatePointwiseOpsLSTM_nodrop(CuSubMatrix<BaseFloat> &y_i, CuSubMatrix<BaseFloat> &y_f,
+                          CuSubMatrix<BaseFloat> &y_g, CuSubMatrix<BaseFloat> &y_o,
+                          CuSubMatrix<BaseFloat> &y_c, CuSubMatrix<BaseFloat> &y_h,
+                          CuSubMatrix<BaseFloat> &y_m,  const CuSubMatrix<BaseFloat> &ycr,
+                          const CuVector<BaseFloat> &p_i, const CuVector<BaseFloat> &p_f,
+                          const CuVector<BaseFloat> &p_o, cudaStream_t &stream);
+
+void BackpropagatePointwiseOpsLSTM( const CuSubMatrix<BaseFloat> &y_i, const CuSubMatrix<BaseFloat> &y_f,
+                                    const CuSubMatrix<BaseFloat> &y_g, const CuSubMatrix<BaseFloat> &y_o,
+                                    const CuSubMatrix<BaseFloat> &y_c, const CuSubMatrix<BaseFloat> &y_h,
+                                    const CuSubMatrix<BaseFloat> &y_m,
+                                    CuSubMatrix<BaseFloat> &d_i, CuSubMatrix<BaseFloat> &d_f,
+                                    CuSubMatrix<BaseFloat> &d_g, CuSubMatrix<BaseFloat> &d_o,
+                                    CuSubMatrix<BaseFloat> &d_c, CuSubMatrix<BaseFloat> &d_h,
+                                    CuSubMatrix<BaseFloat> &d_m, CuSubMatrix<BaseFloat> &d_c_m,
+                                    const CuSubMatrix<BaseFloat> &dir, const CuSubMatrix<BaseFloat> &dfr,
+                                    const CuSubMatrix<BaseFloat> &dcr, const CuSubMatrix<BaseFloat> &dcmr,
+                                    const CuSubMatrix<BaseFloat> &yfr, const CuSubMatrix<BaseFloat> &ycr,
+                                    const CuVector<BaseFloat> &p_i, const CuVector<BaseFloat> &p_f, const CuVector<BaseFloat> &p_o,
+                                    const CuSubMatrix<BaseFloat> &r_mask, const bool nml, cudaStream_t &stream);
+
+void BackpropagatePointwiseOpsLSTM_nodrop( const CuSubMatrix<BaseFloat> &y_i, const CuSubMatrix<BaseFloat> &y_f,
+                                    const CuSubMatrix<BaseFloat> &y_g, const CuSubMatrix<BaseFloat> &y_o,
+                                    const CuSubMatrix<BaseFloat> &y_c, const CuSubMatrix<BaseFloat> &y_h,
+                                    const CuSubMatrix<BaseFloat> &y_m,
+                                    CuSubMatrix<BaseFloat> &d_i, CuSubMatrix<BaseFloat> &d_f,
+                                    CuSubMatrix<BaseFloat> &d_g, CuSubMatrix<BaseFloat> &d_o,
+                                    CuSubMatrix<BaseFloat> &d_c, CuSubMatrix<BaseFloat> &d_h,
+                                    CuSubMatrix<BaseFloat> &d_m, CuSubMatrix<BaseFloat> &d_c_m,
+                                    const CuSubMatrix<BaseFloat> &dir, const CuSubMatrix<BaseFloat> &dfr,
+                                    const CuSubMatrix<BaseFloat> &dcr, const CuSubMatrix<BaseFloat> &dcmr,
+                                    const CuSubMatrix<BaseFloat> &yfr, const CuSubMatrix<BaseFloat> &ycr,
+                                    const CuVector<BaseFloat> &p_i, const CuVector<BaseFloat> &p_f, const CuVector<BaseFloat> &p_o,
+                                    cudaStream_t &stream);
+
 template<typename Real>
 class CuMatrixBase {
  public:
@@ -59,6 +102,48 @@ class CuMatrixBase {
   friend void cu::Randomize<Real>(const CuMatrixBase<Real> &src,
                                   const CuArray<int32> &copy_from_idx,
                                   CuMatrixBase<Real> *tgt);
+
+  friend void PropagatePointwiseOpsLSTM(CuSubMatrix<BaseFloat> &y_i, CuSubMatrix<BaseFloat> &y_f,
+                          CuSubMatrix<BaseFloat> &y_g, CuSubMatrix<BaseFloat> &y_o,
+                          CuSubMatrix<BaseFloat> &y_c, CuSubMatrix<BaseFloat> &y_h,
+                          CuSubMatrix<BaseFloat> &y_m,  const CuSubMatrix<BaseFloat> &ycr,
+                          const CuVector<BaseFloat> &p_i, const CuVector<BaseFloat> &p_f,
+                          const CuVector<BaseFloat> &p_o, const CuSubMatrix<BaseFloat> &r_mask, const bool nml, cudaStream_t &stream);
+
+  friend void PropagatePointwiseOpsLSTM_nodrop(CuSubMatrix<BaseFloat> &y_i, CuSubMatrix<BaseFloat> &y_f,
+                          CuSubMatrix<BaseFloat> &y_g, CuSubMatrix<BaseFloat> &y_o,
+                          CuSubMatrix<BaseFloat> &y_c, CuSubMatrix<BaseFloat> &y_h,
+                          CuSubMatrix<BaseFloat> &y_m,  const CuSubMatrix<BaseFloat> &ycr,
+                          const CuVector<BaseFloat> &p_i, const CuVector<BaseFloat> &p_f,
+                          const CuVector<BaseFloat> &p_o, cudaStream_t &stream);
+
+  friend void BackpropagatePointwiseOpsLSTM( const CuSubMatrix<BaseFloat> &y_i, const CuSubMatrix<BaseFloat> &y_f,
+                                    const CuSubMatrix<BaseFloat> &y_g, const CuSubMatrix<BaseFloat> &y_o,
+                                    const CuSubMatrix<BaseFloat> &y_c, const CuSubMatrix<BaseFloat> &y_h,
+                                    const CuSubMatrix<BaseFloat> &y_m,
+                                    CuSubMatrix<BaseFloat> &d_i, CuSubMatrix<BaseFloat> &d_f,
+                                    CuSubMatrix<BaseFloat> &d_g, CuSubMatrix<BaseFloat> &d_o,
+                                    CuSubMatrix<BaseFloat> &d_c, CuSubMatrix<BaseFloat> &d_h,
+                                    CuSubMatrix<BaseFloat> &d_m, CuSubMatrix<BaseFloat> &d_c_m,
+                                    const CuSubMatrix<BaseFloat> &dir, const CuSubMatrix<BaseFloat> &dfr,
+                                    const CuSubMatrix<BaseFloat> &dcr, const CuSubMatrix<BaseFloat> &dcmr,
+                                    const CuSubMatrix<BaseFloat> &yfr, const CuSubMatrix<BaseFloat> &ycr,
+                                    const CuVector<BaseFloat> &p_i, const CuVector<BaseFloat> &p_f, const CuVector<BaseFloat> &p_o,
+                                    const CuSubMatrix<BaseFloat> &r_mask, const bool nml, cudaStream_t &stream);
+
+  friend void BackpropagatePointwiseOpsLSTM_nodrop( const CuSubMatrix<BaseFloat> &y_i, const CuSubMatrix<BaseFloat> &y_f,
+                                    const CuSubMatrix<BaseFloat> &y_g, const CuSubMatrix<BaseFloat> &y_o,
+                                    const CuSubMatrix<BaseFloat> &y_c, const CuSubMatrix<BaseFloat> &y_h,
+                                    const CuSubMatrix<BaseFloat> &y_m,
+                                    CuSubMatrix<BaseFloat> &d_i, CuSubMatrix<BaseFloat> &d_f,
+                                    CuSubMatrix<BaseFloat> &d_g, CuSubMatrix<BaseFloat> &d_o,
+                                    CuSubMatrix<BaseFloat> &d_c, CuSubMatrix<BaseFloat> &d_h,
+                                    CuSubMatrix<BaseFloat> &d_m, CuSubMatrix<BaseFloat> &d_c_m,
+                                    const CuSubMatrix<BaseFloat> &dir, const CuSubMatrix<BaseFloat> &dfr,
+                                    const CuSubMatrix<BaseFloat> &dcr, const CuSubMatrix<BaseFloat> &dcmr,
+                                    const CuSubMatrix<BaseFloat> &yfr, const CuSubMatrix<BaseFloat> &ycr,
+                                    const CuVector<BaseFloat> &p_i, const CuVector<BaseFloat> &p_f, const CuVector<BaseFloat> &p_o,
+                                    cudaStream_t &stream);
 
   /////////////////////////////////////////////////////
   ///  Dimensions
