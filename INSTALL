@@ -20,3 +20,7 @@ These instructions are valid for UNIX-like systems. Installation on Windows is n
    EESEN can be built without CUDA (for decoding only, for example)
    by omitting the cudatk-dir argument and specifying --use-cuda=no
    
+Note:
+
+Default installation compiles a debug version change config.mk to compile optimized binaries (replace
+-g flag with -O2 or -Ofast).

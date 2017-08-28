@@ -38,3 +38,8 @@ Yajie Miao, Mohammad Gowayyed, and Florian Metze, "[EESEN: End-to-End Speech Rec
 For max perturbation and dropout:
 
 Jayadev Billa, "[Improving LSTM-CTC based ASR performance in domains with limited training data](https://arxiv.org/abs/1707.00722)"
+
+
+### Recent changes
+
+* Added LSTM pointwise ops kernel for both vanilla and dropout enabled LSTM resulting in 2-2.5x speedup. 
