@@ -131,8 +131,6 @@ public:
       cublasSetKernelStream(stream[1]);
       bYGIFO.RowRange(1*S,T*S).AddVecToRows(1.0, bias_bw_);
 
-      if (!in_train) KALDI_ERR << "Recurrent dropout attempted in test mode";
-
       for (int ft = 1, bt = T; ft <= T && bt >=1; ft++, bt--) {
 
         KALDI_ASSERT ((ft+bt) == T+1);
