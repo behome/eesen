@@ -224,7 +224,7 @@ static void _apply_log(Real* mat, MatrixDim d) {
   int32_cuda j = blockIdx.y * blockDim.y + threadIdx.y;
   int32_cuda index = i + j*d.stride;
   if (i < d.cols && j < d.rows)
-    mat[index] = log(mat[index]);
+    mat[index] = log(mat[index]+FLT_EPSILON);
 }
 
 template<typename Real>
@@ -1210,11 +1210,12 @@ void cuda_copy_from_mat_dd_trans(dim3 Gr, dim3 Bl, double *mat_out, const double
  * lstm:: Added kernels for LSTM pointwise ops - if you are changing this be cognizant of GPU register usage since it will
  *        affect speed.
  */
+#define APPLY_CUDA_MAX_GRADIENT(x,limit) fminf( fmaxf((x), (-(limit))), (limit) )
 
 template<typename Real>
 __global__
 static void _propagate_lstm_pointwiseops_nodrop(Real *yi, Real *yf, Real *yg, Real *yo, Real *yc, Real *yh, Real *ym,
-                                    const Real *ycr, const Real *pi, const Real *pf, const Real *po,  MatrixDim mat_dim
+                                    const Real *ycr, const Real *pi, const Real *pf, const Real *po,  MatrixDim mat_dim, const Real max_grad = 100
                               ) {
 
   int i = blockIdx.x * blockDim.x + threadIdx.x; // row index
@@ -1239,12 +1240,24 @@ static void _propagate_lstm_pointwiseops_nodrop(Real *yi, Real *yf, Real *yg, Re
 
     // input gate
     r2 = r1 * pi[j] + r2;
-    r2 = 1.0f / (1.0f + __expf(-r2)); //1.0 / (1.0 + expf(-ycr_t * pi[j] - yi_t)); // single precision
+    // OLD: r2 = 1.0f / (1.0f + __expf(-r2)); //1.0 / (1.0 + expf(-ycr_t * pi[j] - yi_t)); // single precision
+    r2 = __expf(-r2);
+    if (isinf(r2)) {
+      r2 = 0.0f;
+    } else {
+      r2 = 1.0f / (1.0f + r2); //1.0 / (1.0 + expf(-ycr_t * pi[j] - yi_t)); // single precision
+    }
     yi[index] = r2;
 
     // forget gate
     r3 = r1 * pf[j] + r3;
-    r3 = 1.0f / (1.0f + __expf(-r3)); //(1.0 + expf(-ycr_t * pf[j] - yf_t)); // single precision
+    // OLD: r3 = 1.0f / (1.0f + __expf(-r3)); //(1.0 + expf(-ycr_t * pf[j] - yf_t)); // single precision
+    r3 = __expf(-r3);
+    if (isinf(r3)) {
+      r3 = 0.0f;
+    } else {
+      r3 = 1.0f / (1.0f + r3); //(1.0 + expf(-ycr_t * pf[j] - yf_t)); // single precision
+    }
     yf[index] = r3;
     r3 = r3 * r1; // ycr * yf
 
@@ -1269,6 +1282,9 @@ static void _propagate_lstm_pointwiseops_nodrop(Real *yi, Real *yf, Real *yg, Re
 
     r1 = r1 * r2 + r3; // r1 = yi, r2 = yg, r3 = yf * ycr, r1 = yc (after)
 
+    // clip cell memory
+    r1 = APPLY_CUDA_MAX_GRADIENT(r1, max_grad);
+
     r4 = __expf(2.0f * r1);
     if(isinf(r4)) {
       r2 = 1.0f;
@@ -1286,7 +1302,13 @@ static void _propagate_lstm_pointwiseops_nodrop(Real *yi, Real *yf, Real *yg, Re
         y_m.AddMatDotMat(1.0, y_h, kNoTrans, y_o, kNoTrans, 0.0);
     */
     r3 = r1 * po[j] + yo[index];
-    r3 = 1.0f / (1.0f + __expf(-r3)); // single precision
+    // OLD: r3 = 1.0f / (1.0f + __expf(-r3)); // single precision
+    r3 = __expf(-r3);
+    if (isinf(r3)) {
+      r3 = 0.0f;
+    } else {
+      r3 = 1.0f / (1.0f + r3); // single precision
+    }
 
     ym[index] = r2 * r3;  //r2= yh from above
 
@@ -1300,7 +1322,7 @@ template<typename Real>
 __global__
 static void _propagate_lstm_pointwiseops(Real *yi, Real *yf, Real *yg, Real *yo, Real *yc, Real *yh, Real *ym,
                                     const Real *ycr, const Real *pi, const Real *pf, const Real *po, const Real *rm, MatrixDim mat_dim,
-                              int mat2_row_stride, int mat2_col_stride, const bool nml
+                              int mat2_row_stride, int mat2_col_stride, const bool nml, const Real max_grad = 100
                               ) {
 
   int i = blockIdx.x * blockDim.x + threadIdx.x; // row index
@@ -1325,12 +1347,24 @@ static void _propagate_lstm_pointwiseops(Real *yi, Real *yf, Real *yg, Real *yo,
 
     // input gate
     r2 = r1 * pi[j] + r2;
-    r2 = 1.0f / (1.0f + __expf(-r2)); //1.0 / (1.0 + expf(-ycr_t * pi[j] - yi_t)); // single precision
+    // OLD: r2 = 1.0f / (1.0f + __expf(-r2)); //1.0 / (1.0 + expf(-ycr_t * pi[j] - yi_t)); // single precision
+    r2 = __expf(-r2);
+    if (isinf(r2)) {
+      r2 = 0.0f;
+    } else {
+      r2 = 1.0f / (1.0f + r2); //1.0 / (1.0 + expf(-ycr_t * pi[j] - yi_t)); // single precision
+    }
     yi[index] = r2;
 
     // forget gate
     r3 = r1 * pf[j] + r3;
-    r3 = 1.0f / (1.0f + __expf(-r3)); //(1.0 + expf(-ycr_t * pf[j] - yf_t)); // single precision
+    // OLD: r3 = 1.0f / (1.0f + __expf(-r3)); //(1.0 + expf(-ycr_t * pf[j] - yf_t)); // single precision
+    r3 = __expf(-r3);
+    if (isinf(r3)) {
+      r3 = 0.0f;
+    } else {
+      r3 = 1.0f / (1.0f + r3); //(1.0 + expf(-ycr_t * pf[j] - yf_t)); // single precision
+    }
     yf[index] = r3;
     r3 = r3 * r1;
 
@@ -1361,8 +1395,11 @@ static void _propagate_lstm_pointwiseops(Real *yi, Real *yf, Real *yg, Real *yo,
 
     if (nml)
       r1 = rm[i * mat2_row_stride + j] * r2 * r1 + r3; // r1 = yi, r2 = yg, r3 = yf * ycr, r1 = yc (after)
-    else
+    else // then rnndrop
       r1 = rm[i * mat2_row_stride + j] * (r2 * r1 + r3); // r1 = yi, r2 = yg, r3 = yf * ycr, r1 = yc (after)
+
+    // clip cell memory
+    r1 = APPLY_CUDA_MAX_GRADIENT(r1, max_grad);
 
     r4 = __expf(2.0f * r1);
     if(isinf(r4)) {
@@ -1381,7 +1418,13 @@ static void _propagate_lstm_pointwiseops(Real *yi, Real *yf, Real *yg, Real *yo,
         y_m.AddMatDotMat(1.0, y_h, kNoTrans, y_o, kNoTrans, 0.0);
     */
     r3 = r1 * po[j] + yo[index];
-    r3 = 1.0f / (1.0f + __expf(-r3)); // single precision
+    // OLD: r3 = 1.0f / (1.0f + __expf(-r3)); // single precision
+    r3 = __expf(-r3);
+    if (isinf(r3)) {
+      r3 = 0.0f;
+    } else {
+      r3 = 1.0f / (1.0f + r3); // single precision
+    }
 
     ym[index] = r2 * r3;
 
@@ -1399,7 +1442,7 @@ static void _backpropagate_lstm_pointwiseops_nodrop(const Real *yi, const Real *
                                                 Real *di, Real *df, Real *dg, Real *d_o, Real *dc, Real *dh, Real *dm,
                                                 Real *dcm, const Real *dir, const Real *dfr, const Real *dcr,
                                                 const Real *dcmr, const Real *yfr, const Real *ycr,
-                                                const Real *pi, const Real *pf,  const Real *po, MatrixDim mat_dim
+                                                const Real *pi, const Real *pf,  const Real *po, MatrixDim mat_dim, const Real max_grad = 100
                                                 ) {
 
   int i = blockIdx.x * blockDim.x + threadIdx.x; // row index
@@ -1442,8 +1485,15 @@ static void _backpropagate_lstm_pointwiseops_nodrop(const Real *yi, const Real *
     Real r3  = yh[index]; //3
     Real r4;
 
+    // Clip dm if needed
+    r1 = APPLY_CUDA_MAX_GRADIENT(r1, max_grad); 
+    dm[index] = r1;
+
     r4 = (1.0f - r3 * r3) * r1 * r2; // r4 = dh
     r2 = (1.0f - r2) * r2 * r1 * r3; // r2 = do
+
+    r4 = APPLY_CUDA_MAX_GRADIENT(r4, max_grad);
+    r2 = APPLY_CUDA_MAX_GRADIENT(r2, max_grad);
 
     dh[index] = r4;
     d_o[index] = r2;
@@ -1454,12 +1504,19 @@ static void _backpropagate_lstm_pointwiseops_nodrop(const Real *yi, const Real *
     r1 = r4 + dir[index] * pi[j] + dfr[index] * pf[j] + r2 * po[j] + dcr[index] * yfr[index] + r1 ; //r1 = dc
     r2 = (1.0f - r3) * r3 * r1 * ycr[index]; // r2 = df
 
+    r1 = APPLY_CUDA_MAX_GRADIENT(r1, max_grad);
+    r2 = APPLY_CUDA_MAX_GRADIENT(r2, max_grad);
+
     df[index] = r2;
 
     r2 = yi[index]; // r2 = yi
     r3 = yg[index]; // r3 = yg
-    di[index] = (1.0f - r2) * r2 * r1 * r3;
-    dg[index] = (1.0f - r3 * r3) * r1 * r2;
+
+    r4 = (1.0f - r2) * r2 * r1 * r3;
+    di[index] = APPLY_CUDA_MAX_GRADIENT(r4, max_grad); //(1.0f - r2) * r2 * r1 * r3;
+
+    r4 = (1.0f - r3 * r3) * r1 * r2;
+    dg[index] = APPLY_CUDA_MAX_GRADIENT(r4, max_grad); //(1.0f - r3 * r3) * r1 * r2;
 
     dc[index] = r1;
 
@@ -1474,7 +1531,7 @@ static void _backpropagate_lstm_pointwiseops(const Real *yi, const Real *yf, con
                                                 Real *dcm, const Real *dir, const Real *dfr, const Real *dcr,
                                                 const Real *dcmr, const Real *yfr, const Real *ycr,
                                                 const Real *pi, const Real *pf,  const Real *po, const Real *rm, MatrixDim mat_dim,
-                                                int mat2_row_stride, int mat2_col_stride, const bool nml
+                                                int mat2_row_stride, int mat2_col_stride, const bool nml, const Real max_grad = 100
                                                 ) {
 
   int i = blockIdx.x * blockDim.x + threadIdx.x; // row index
@@ -1531,11 +1588,17 @@ static void _backpropagate_lstm_pointwiseops(const Real *yi, const Real *yf, con
     Real r3  = yh[index]; //3
     Real r4;
 
+    // Clip dm if needed
+    r1 = APPLY_CUDA_MAX_GRADIENT(r1, max_grad); // 2
+    dm[index] = r1;
+
     r4 = (1.0f - r3 * r3) * r1 * r2; // r4 = dh
     r2 = (1.0f - r2) * r2 * r1 * r3; // r2 = do
 
-    r3 = dc[index]; //r3 = dc
+    r4 = APPLY_CUDA_MAX_GRADIENT(r4, max_grad);
+    r2 = APPLY_CUDA_MAX_GRADIENT(r2, max_grad);
 
+    r3 = dc[index]; //r3 = dc
     r3 = r4 + dir[index] * pi[j] + dfr[index] * pf[j] + r2 * po[j] + r3; //r3 = dc
 
     dh[index] = r4;
@@ -1543,25 +1606,32 @@ static void _backpropagate_lstm_pointwiseops(const Real *yi, const Real *yf, con
 
     if (nml) {
         r3 = dcr[index] * yfr[index] + r3; //r3 = dc
+        r3 = APPLY_CUDA_MAX_GRADIENT(r3, max_grad);
         r1 = r3 * rm[i * mat2_row_stride + j]; //r1 = dcm
         r2  = r3 * ycr[index]; // r2 = df
     } else {
         r3 = dcmr[i * mat2_row_stride + j] * yfr[index] + r3; //r3 = dc
+        r3 = APPLY_CUDA_MAX_GRADIENT(r3, max_grad);
         r1 = r3 * rm[i * mat2_row_stride + j]; //r1 = dcm
         r2 = r1 * ycr[index]; //r2 = df
     }
-    dc[index] = r3;
+    dc[index] = r3; // we clip in the conditional above
 
     r3 = yf[index]; // r3 = yf
     r2 = (1.0f - r3) * r3 * r2; // r2 = df
+    r2 = APPLY_CUDA_MAX_GRADIENT(r2, max_grad);
     df[index] = r2;
 
     r2 = yi[index]; // r2 = yi
     r3 = yg[index]; // r3 = yg
-    di[index] = (1.0f - r2) * r2 * r1 * r3;
-    dg[index] = (1.0f - r3 * r3) * r1 * r2;
 
-    dcm[i * mat2_row_stride + j] = r1;
+    r4 = (1.0f - r2) * r2 * r1 * r3;
+    di[index] = APPLY_CUDA_MAX_GRADIENT(r4, max_grad); //(1.0f - r2) * r2 * r1 * r3;
+
+    r4 = (1.0f - r3 * r3) * r1 * r2;
+    dg[index] = APPLY_CUDA_MAX_GRADIENT(r4, max_grad); //(1.0f - r3 * r3) * r1 * r2;
+
+    dcm[i * mat2_row_stride + j] = r1; // don't clip dcm since we clip dc in conditional
 
   }
 }
