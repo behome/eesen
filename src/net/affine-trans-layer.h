@@ -36,7 +36,7 @@ class AffineTransform : public TrainableLayer {
     : TrainableLayer(dim_in, dim_out), 
       linearity_(dim_out, dim_in), bias_(dim_out),
       linearity_corr_(dim_out, dim_in), bias_corr_(dim_out),
-      learn_rate_coef_(1.0)
+      learn_rate_coef_(1.0), max_grad_(0.0)
   { }
   ~AffineTransform()
   { }
@@ -49,12 +49,14 @@ class AffineTransform : public TrainableLayer {
     // define options
     float param_range = 0.02;
     float learn_rate_coef = 1.0;
+    float max_grad = 0.0;
     // parse config
     std::string token; 
     while (!is.eof()) {
       ReadToken(is, false, &token); 
       /**/ if (token == "<ParamRange>") ReadBasicType(is, false, &param_range);
       else if (token == "<LearnRateCoef>") ReadBasicType(is, false, &learn_rate_coef);
+      else if (token == "<MaxGrad>") ReadBasicType(is, false, &max_grad);
       else KALDI_ERR << "Unknown token " << token << ", a typo in config?"
                      << " (ParamStddev|BiasMean|BiasRange|LearnRateCoef|BiasLearnRateCoef)";
       is >> std::ws; // eat-up whitespace
@@ -65,6 +67,7 @@ class AffineTransform : public TrainableLayer {
     bias_.Resize(output_dim_, kUndefined); bias_.InitRandUniform(param_range);
     //
     learn_rate_coef_ = learn_rate_coef;
+    max_grad_ = max_grad;
   }
 
   void ReadData(std::istream &is, bool binary) {
@@ -72,6 +75,10 @@ class AffineTransform : public TrainableLayer {
     if ('<' == Peek(is, binary)) {
       ExpectToken(is, binary, "<LearnRateCoef>");
       ReadBasicType(is, binary, &learn_rate_coef_);
+    }
+    if ('<' == Peek(is, binary)) {
+      ExpectToken(is, binary, "<MaxGrad>");
+      ReadBasicType(is, binary, &max_grad_);
     }
     // weights
     linearity_.Read(is, binary);
@@ -85,6 +92,8 @@ class AffineTransform : public TrainableLayer {
   void WriteData(std::ostream &os, bool binary) const {
     WriteToken(os, binary, "<LearnRateCoef>");
     WriteBasicType(os, binary, learn_rate_coef_);
+    WriteToken(os, binary, "<MaxGrad>");
+    WriteBasicType(os, binary, max_grad_);
     // weights
     linearity_.Write(os, binary);
     bias_.Write(os, binary);
@@ -127,10 +136,18 @@ class AffineTransform : public TrainableLayer {
     // we use following hyperparameters from the option class
     const BaseFloat lr = opts_.learn_rate * learn_rate_coef_;
     const BaseFloat mmt = opts_.momentum;
+
     // we will also need the number of frames in the mini-batch
     // compute gradient (incl. momentum)
     linearity_corr_.AddMatMat(1.0, diff, kTrans, input, kNoTrans, mmt);
     bias_corr_.AddRowSumMat(1.0, diff, mmt);
+
+    // clip gradients
+    if (max_grad_ >0) {
+      linearity_corr_.ApplyFloor(-max_grad_); linearity_corr_.ApplyCeiling(max_grad_);
+      bias_corr_.ApplyFloor(-max_grad_); bias_corr_.ApplyCeiling(max_grad_);
+    }
+
     // update
     linearity_.AddMat(-lr, linearity_corr_);
     bias_.AddVec(-lr, bias_corr_);
@@ -179,6 +196,7 @@ class AffineTransform : public TrainableLayer {
   CuVector<BaseFloat> bias_corr_;
 
   BaseFloat learn_rate_coef_;
+  BaseFloat max_grad_;
 };
 
 } // namespace eesen
