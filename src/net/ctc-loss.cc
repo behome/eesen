@@ -63,6 +63,10 @@ void Ctc::Eval(const CuMatrixBase<BaseFloat> &net_out, const std::vector<int32> 
   ctc_err_.Resize(num_frames, num_classes, kSetZero);
   ctc_err_.ComputeCtcError(alpha_, beta_, net_out, label_expand_, pzx);  // here should use the original ??
 
+  // clip gradients - should make this configurable, probably.
+  BaseFloat maxGrad = 100;
+  ctc_err_.ApplyFloor(-maxGrad); ctc_err_.ApplyCeiling(maxGrad); 
+
   // back-propagate the errors through the softmax layer
   ctc_err_.MulElements(net_out);
   CuVector<BaseFloat> row_sum(num_frames, kSetZero);
@@ -155,6 +159,10 @@ void Ctc::EvalParallel(const std::vector<int32> &frame_num_utt, const CuMatrixBa
   // gradients from CTC
   ctc_err_.Resize(num_frames, num_classes, kSetZero);
   ctc_err_.ComputeCtcErrorMSeq(alpha_, beta_, net_out, label_expand_, frame_num_utt, pzx);  // here should use the original ??
+
+  // clip gradients - should make this configurable, probably.
+  BaseFloat maxGrad = 100;
+  ctc_err_.ApplyFloor(-maxGrad); ctc_err_.ApplyCeiling(maxGrad); 
 
   // back-propagate the errors through the softmax layer
   ctc_err_.MulElements(net_out);
