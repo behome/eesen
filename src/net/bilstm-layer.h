@@ -1035,8 +1035,6 @@ protected:
     int32 cell_dim_;
     BaseFloat learn_rate_coef_;
     BaseFloat max_grad_;
-    BaseFloat drop_factor_;
-    bool adaBuffersInitialized;
 
     BaseFloat forward_dropout;
     bool forward_step_dropout;
@@ -1050,11 +1048,13 @@ protected:
 
     BaseFloat recurrent_dropout;
 
+    bool in_train; // are we training or testing model (impacts dropout)
+    BaseFloat drop_factor_;
+    bool adaBuffersInitialized;
+
     bool twiddle_forward; // twiddle forward if true
 
     bool twiddle_apply_forward;
-
-    bool in_train; // are we training or testing model (impacts dropout)
 
     CuMatrix<BaseFloat> forward_drop_mask_;
     Matrix<BaseFloat>   forward_drop_mask_cpu_;
