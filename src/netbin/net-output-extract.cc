@@ -96,12 +96,13 @@ int main(int argc, char *argv[]) {
       
       // Feed the sequence to the network for a feedforward pass
       net.Feedforward(CuMatrix<BaseFloat>(mat), &net_out);
-      
+
       // Convert posteriors to log-scale, if needed
       if (apply_log) {
+        net_out.ApplyFloor(1.0e-20); // prevent log (0).
         net_out.ApplyLog();
       }
-     
+      
       // Subtract log-priors from log-posteriors, which is equivalent to
       // scaling the softmax outputs with the prior distribution
       if (prior_opts.class_frame_counts != "" ) {
