@@ -27,7 +27,7 @@
 
 #if HAVE_CUDA == 1
 #include <cuda_runtime_api.h>
-#include <cublas.h>
+#include <cublas_v2.h>
 #endif
 
 #include "base/timer.h"
@@ -35,7 +35,6 @@
 #include "gpucompute/cuda-vector.h"
 #include "gpucompute/cuda-device.h"
 #include "gpucompute/cuda-kernels-wrappers.h"
-#include "gpucompute/cuda-randkernels-wrappers.h"
 #include "gpucompute/cuda-array.h"
 #include "gpucompute/cuda-math.h"
 #include "gpucompute/cuda-matrix.h"
@@ -950,11 +949,11 @@ void CuMatrixBase<Real>::AddMatMat(
   if (CuDevice::Instantiate().Enabled()) {
     Timer tim;
 
-    cublas_gemm((transB==kTrans?'T':'N'), (transA==kTrans?'T':'N'), m, n, k,
-                alpha, B.data_, B.Stride(), A.data_, A.Stride(),
-                beta, data_, Stride());
-
-    CU_SAFE_CALL(cublasGetError());
+    CUBLAS_SAFE_CALL(cublas_gemm(GetCublasHandle(),
+                  (transB==kTrans? CUBLAS_OP_T:CUBLAS_OP_N),
+                  (transA==kTrans? CUBLAS_OP_T:CUBLAS_OP_N),
+                  m, n, k, alpha, B.data_, B.Stride(),
+                  A.data_, A.Stride(), beta, data_, Stride()));
 
     CuDevice::Instantiate().AccuProfile(__func__, tim.Elapsed());
   } else
@@ -1549,6 +1548,22 @@ void CuMatrixBase<Real>::SetRandUniform() {
 #endif
   {
     Mat().SetRandUniform();
+  }
+}
+
+template<typename Real>
+void CuMatrixBase<Real>::SetRandUniformCol() {
+  if (num_rows_ == 0) return;
+#if HAVE_CUDA == 1
+  if (CuDevice::Instantiate().Enabled()) {
+    CuRand<Real> tmp;
+    CuVector<Real> single_row(num_cols_,kUndefined);
+    tmp.RandUniform(&single_row);
+    this->AddVecToRows(1.0, single_row, 0.0);
+  } else
+#endif
+  {
+    Mat().SetRandUniformCol();
   }
 }
 

@@ -177,7 +177,6 @@ class CuMatrixBase {
   void CopyToMat(MatrixBase<OtherReal> *dst,
                  MatrixTransposeType trans = kNoTrans) const;
 
-
   /////////////////////////////////////////////////////
   ///////  Basic operations
   /////////////////////////////////////////////////////
@@ -209,6 +208,8 @@ class CuMatrixBase {
   void SetRandn();
   /// Set to random values drawn from a uniform distribution [0, 1]
   void SetRandUniform();
+  /// Similar to SetRandUniform() but keeps all cols identical to each other (row val changes)
+  void SetRandUniformCol();
   /// Set to random values drawn from a uniform distribution [-range, range]
   void InitRandUniform(Real range);
   // Invert elements

@@ -29,7 +29,8 @@
 #include "cpucompute/matrix-common.h"
 
 #if HAVE_CUDA == 1
-#include <cublas.h>
+#include <cublas_v2.h>
+#include <curand.h>
 #include <cuda_runtime_api.h>
 
 
@@ -40,8 +41,28 @@
   if ((ret = (fun)) != 0) { \
     KALDI_ERR << "cudaError_t " << ret << " : \"" << cudaGetErrorString((cudaError_t)ret) << "\" returned from '" << #fun << "'"; \
   } \
-  cudaThreadSynchronize(); \
+  cudaDeviceSynchronize(); \
 } 
+
+#ifndef CUBLAS_SAFE_CALL
+#define CUBLAS_SAFE_CALL(fun) \
+{ \
+  int32 ret; \
+  if ((ret = (fun)) != 0) { \
+    KALDI_ERR << "cublasStatus_t " << ret << " : \"" << cublasGetStatusString((cublasStatus_t)ret) << "\" returned from '" << #fun << "'"; \
+  } \
+}
+#endif
+
+#ifndef CURAND_SAFE_CALL
+#define CURAND_SAFE_CALL(fun) \
+{ \
+  int32 ret; \
+  if ((ret = (fun)) != 0) { \
+    KALDI_ERR << "curandStatus_t " << ret << " : \"" << curandGetStatusString((curandStatus_t)ret) << "\" returned from '" << #fun << "'"; \
+  } \
+}
+#endif
 
 
 namespace eesen {
@@ -52,6 +73,12 @@ inline int32 n_blocks(int32 size, int32 block_size) {
 }
 
 cublasOperation_t KaldiTransToCuTrans(MatrixTransposeType kaldi_trans);
+
+/** This is analogous to the CUDA function cudaGetErrorString(). **/
+const char* cublasGetStatusString(cublasStatus_t status);
+
+/** This is analogous to the CUDA function cudaGetErrorString(). **/
+const char* curandGetStatusString(curandStatus_t status);
   
 }
 

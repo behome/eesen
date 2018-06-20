@@ -48,19 +48,15 @@ public:
 
       if (!in_train) return;
 
-      // create the mask on the CPU and copy it over (GPU version was significantly slower by factor of 4-5)
-      forward_drop_mask_cpu_.Resize(T*S, 2 * cell_dim_, kUndefined);
       forward_drop_mask_.Resize(T*S, 2 * cell_dim_, kUndefined);
-
       if (forward_step_dropout)
-        forward_drop_mask_cpu_.SetRandUniform();
+        forward_drop_mask_.SetRandUniform();
       else if (forward_sequence_dropout)
-        forward_drop_mask_cpu_.SetRandUniformCol();
+        forward_drop_mask_.SetRandUniformCol();      
 
-      forward_drop_mask_cpu_.Add(-forward_dropout);
-      forward_drop_mask_cpu_.ApplyHeaviside();
-      forward_drop_mask_cpu_.Scale(1.0/(1.0-forward_dropout)); // scale mask
-      forward_drop_mask_.CopyFromMat(forward_drop_mask_cpu_);
+      forward_drop_mask_.Add(-forward_dropout);
+      forward_drop_mask_.ApplyHeaviside();
+      forward_drop_mask_.Scale(1.0/(1.0-forward_dropout)); // scale mask
 
     }
 
@@ -73,23 +69,19 @@ public:
       int mask_row_size = recurrent_sequence_dropout? S: (T+2)*S;
 
       if (recurrent_dropout != 0.0 && (rnndrop || no_mem_loss_dropout)) {
-          recurrent_drop_mask_fw_.Resize(mask_row_size, cell_dim_, kUndefined);
-          recurrent_drop_mask_bw_.Resize(mask_row_size, cell_dim_, kUndefined);
-          recurrent_drop_mask_cpu_.Resize(mask_row_size, 2*cell_dim_, kUndefined);
+        // mask for both fw/bw stored in one matrix - we'll separate them out as needed  
+        recurrent_drop_mask_.Resize(mask_row_size, 2*cell_dim_, kUndefined);
 
         if (recurrent_sequence_dropout)
-          recurrent_drop_mask_cpu_.SetRandUniformCol();
+          recurrent_drop_mask_.SetRandUniformCol();
         else
-          recurrent_drop_mask_cpu_.SetRandUniform();
+          recurrent_drop_mask_.SetRandUniform();
 
-        recurrent_drop_mask_cpu_.Add(-recurrent_dropout);
-        recurrent_drop_mask_cpu_.ApplyHeaviside();
+        recurrent_drop_mask_.Add(-recurrent_dropout);
+        recurrent_drop_mask_.ApplyHeaviside();
         // scale the masks so as to not need it during test.
-        recurrent_drop_mask_cpu_.Scale(1.0 /(1.0-recurrent_dropout));
-        //forward cells mask
-        recurrent_drop_mask_fw_.CopyFromMat(recurrent_drop_mask_cpu_.ColRange(0, cell_dim_));
-        //backward cells mask
-        recurrent_drop_mask_bw_.CopyFromMat(recurrent_drop_mask_cpu_.ColRange(cell_dim_, cell_dim_));
+        recurrent_drop_mask_.Scale(1.0 /(1.0-recurrent_dropout));
+
       }
 
     }
@@ -121,14 +113,14 @@ public:
 
 
       // no temporal recurrence involved in the inputs
-      cublasSetKernelStream(stream[0]);
+      cublasSetStream(GetCublasHandle(),stream[0]);
       fYGIFO.RowRange(1*S,T*S).AddMatMat(1.0, in, kNoTrans, wei_gifo_x_fw_, kTrans, 0.0);
-      cublasSetKernelStream(stream[1]);
+      cublasSetStream(GetCublasHandle(),stream[1]);
       bYGIFO.RowRange(1*S,T*S).AddMatMat(1.0, in, kNoTrans, wei_gifo_x_bw_, kTrans, 0.0);
 
-      cublasSetKernelStream(stream[0]);
+      cublasSetStream(GetCublasHandle(),stream[0]);
       fYGIFO.RowRange(1*S,T*S).AddVecToRows(1.0, bias_fw_);
-      cublasSetKernelStream(stream[1]);
+      cublasSetStream(GetCublasHandle(),stream[1]);
       bYGIFO.RowRange(1*S,T*S).AddVecToRows(1.0, bias_bw_);
 
       for (int ft = 1, bt = T; ft <= T && bt >=1; ft++, bt--) {
@@ -157,10 +149,10 @@ public:
         CuSubMatrix<BaseFloat> by_GIFO(bYGIFO.RowRange(bt*S,S));
 
         // add the recurrence of the previous memory cell to various gates/units
-        cublasSetKernelStream(stream[0]);
+        cublasSetStream(GetCublasHandle(),stream[0]);
         fy_GIFO.AddMatMat(1.0, fYM.RowRange((ft-1)*S,S), kNoTrans, wei_gifo_m_fw_, kTrans,  1.0);
 
-        cublasSetKernelStream(stream[1]);
+        cublasSetStream(GetCublasHandle(),stream[1]);
         by_GIFO.AddMatMat(1.0, bYM.RowRange((bt+1)*S,S), kNoTrans, wei_gifo_m_bw_, kTrans,  1.0);
 
         PropagatePointwiseOpsLSTM_nodrop(fy_i, fy_f, fy_g, fy_o, fy_c, fy_h, fy_m, fYC.RowRange((ft-1)*S,S),
@@ -179,7 +171,7 @@ public:
        //destroy streams
         cudaStreamDestroy( stream[i] ) ;
       }
-      cublasSetKernelStream(NULL);
+      cublasSetStream(GetCublasHandle(),NULL);
     }
 
    void PropagateFncRecurrentDropoutFast(const CuMatrixBase<BaseFloat> &in, int32 T, int32 S) {
@@ -209,25 +201,30 @@ public:
 
 
       // no temporal recurrence involved in the inputs
-      cublasSetKernelStream(stream[0]);
+      cublasSetStream(GetCublasHandle(),stream[0]);
       fYGIFO.RowRange(1*S,T*S).AddMatMat(1.0, in, kNoTrans, wei_gifo_x_fw_, kTrans, 0.0);
-      cublasSetKernelStream(stream[1]);
+      cublasSetStream(GetCublasHandle(),stream[1]);
       bYGIFO.RowRange(1*S,T*S).AddMatMat(1.0, in, kNoTrans, wei_gifo_x_bw_, kTrans, 0.0);
 
-      cublasSetKernelStream(stream[0]);
+      cublasSetStream(GetCublasHandle(),stream[0]);
       fYGIFO.RowRange(1*S,T*S).AddVecToRows(1.0, bias_fw_);
-      cublasSetKernelStream(stream[1]);
+      cublasSetStream(GetCublasHandle(),stream[1]);
       bYGIFO.RowRange(1*S,T*S).AddVecToRows(1.0, bias_bw_);
 
       if (!in_train) KALDI_ERR << "Recurrent dropout attempted in test mode";
 
-      CuSubMatrix<BaseFloat> fr_mask;
-      CuSubMatrix<BaseFloat> br_mask;
-
+      CuSubMatrix<BaseFloat> fr_mask, br_mask;
+      CuSubMatrix<BaseFloat> fr_mask_seq, br_mask_seq;
+      
       // point the mask to the correct position
+      if (recurrent_sequence_dropout || recurrent_step_dropout) {
+          fr_mask_seq =  recurrent_drop_mask_.ColRange(0, cell_dim_);
+          br_mask_seq =  recurrent_drop_mask_.ColRange(1 * cell_dim_, cell_dim_);        
+      }
+
       if (recurrent_sequence_dropout) {
-          fr_mask =  recurrent_drop_mask_fw_;
-          br_mask =  recurrent_drop_mask_bw_;
+          fr_mask = fr_mask_seq;
+          br_mask = br_mask_seq;
       }
 
       for (int ft = 1, bt = T; ft <= T && bt >=1; ft++, bt--) {
@@ -257,15 +254,15 @@ public:
 
         // point the mask to the correct position
         if (recurrent_step_dropout) {
-          fr_mask =  recurrent_drop_mask_fw_.RowRange(ft*S,S);
-          br_mask =  recurrent_drop_mask_bw_.RowRange(bt*S,S);
+          fr_mask =  fr_mask_seq.RowRange(ft*S,S);
+          br_mask =  br_mask_seq.RowRange(bt*S,S);
         }
 
         // add the recurrence of the previous memory cell to various gates/units
-        cublasSetKernelStream(stream[0]);
+        cublasSetStream(GetCublasHandle(),stream[0]);
         fy_GIFO.AddMatMat(1.0, fYM.RowRange((ft-1)*S,S), kNoTrans, wei_gifo_m_fw_, kTrans,  1.0);
 
-        cublasSetKernelStream(stream[1]);
+        cublasSetStream(GetCublasHandle(),stream[1]);
         by_GIFO.AddMatMat(1.0, bYM.RowRange((bt+1)*S,S), kNoTrans, wei_gifo_m_bw_, kTrans,  1.0);
 
 
@@ -285,7 +282,7 @@ public:
        //destroy streams
         cudaStreamDestroy( stream[i] ) ;
       }
-      cublasSetKernelStream(NULL);
+      cublasSetStream(GetCublasHandle(),NULL);
     }
 
     void PropagateFnc(const CuMatrixBase<BaseFloat> &in, CuMatrixBase<BaseFloat> *out) {
@@ -436,9 +433,9 @@ public:
         CuSubMatrix<BaseFloat> bd_h_m(bDHM.RowRange(bt*S, S));
 
         // d_m comes from two parts: errors from the upper layer and errors from the following frame (t+1)
-        cublasSetKernelStream(stream[0]);
+        cublasSetStream(GetCublasHandle(),stream[0]);
         fd_m.AddMatMat(1.0, fDGIFO.RowRange((ft+1)*S,S), kNoTrans, wei_gifo_m_fw_, kNoTrans, 1.0);
-        cublasSetKernelStream(stream[1]);
+        cublasSetStream(GetCublasHandle(),stream[1]);
         bd_m.AddMatMat(1.0, bDGIFO.RowRange((bt-1)*S,S), kNoTrans, wei_gifo_m_bw_, kNoTrans, 1.0);
 
         BackpropagatePointwiseOpsLSTM_nodrop(fy_i, fy_f, fy_g, fy_o, fy_c, fy_h, fy_m,
@@ -459,40 +456,40 @@ public:
 
       }  // end of t
 
-      cublasSetKernelStream(NULL);
+      cublasSetStream(GetCublasHandle(),NULL);
       //  updates to the model parameters
       const BaseFloat mmt = opts_.momentum;
-      cublasSetKernelStream(stream[0]);
+      cublasSetStream(GetCublasHandle(),stream[0]);
       wei_gifo_x_fw_corr_.AddMatMat(1.0, fDGIFO.RowRange(1*S, T*S), kTrans, in, kNoTrans, mmt);
-      cublasSetKernelStream(stream[1]);
+      cublasSetStream(GetCublasHandle(),stream[1]);
       wei_gifo_m_fw_corr_.AddMatMat(1.0, fDGIFO.RowRange(1*S, T*S), kTrans, fYM.RowRange(0*S,T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[2]);
+      cublasSetStream(GetCublasHandle(),stream[2]);
       bias_fw_corr_.AddRowSumMat(1.0, fDGIFO.RowRange(1*S, T*S), mmt);
-      cublasSetKernelStream(stream[3]);
+      cublasSetStream(GetCublasHandle(),stream[3]);
       phole_i_c_fw_corr_.AddDiagMatMat(1.0, fDI.RowRange(1*S, T*S), kTrans, fYC.RowRange(0*S, T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[4]);
+      cublasSetStream(GetCublasHandle(),stream[4]);
       phole_f_c_fw_corr_.AddDiagMatMat(1.0, fDF.RowRange(1*S, T*S), kTrans, fYC.RowRange(0*S, T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[5]);
+      cublasSetStream(GetCublasHandle(),stream[5]);
       phole_o_c_fw_corr_.AddDiagMatMat(1.0, fDO.RowRange(1*S, T*S), kTrans, fYC.RowRange(1*S, T*S), kNoTrans, mmt);
       // updates to the parameters
-      cublasSetKernelStream(stream[6]);
+      cublasSetStream(GetCublasHandle(),stream[6]);
       wei_gifo_x_bw_corr_.AddMatMat(1.0, bDGIFO.RowRange(1*S,T*S), kTrans, in, kNoTrans, mmt);
-      cublasSetKernelStream(stream[7]);
+      cublasSetStream(GetCublasHandle(),stream[7]);
       wei_gifo_m_bw_corr_.AddMatMat(1.0, bDGIFO.RowRange(1*S,T*S), kTrans, bYM.RowRange(2*S,T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[8]);
+      cublasSetStream(GetCublasHandle(),stream[8]);
       bias_bw_corr_.AddRowSumMat(1.0, bDGIFO.RowRange(1*S,T*S), mmt);
-      cublasSetKernelStream(stream[9]);
+      cublasSetStream(GetCublasHandle(),stream[9]);
       phole_i_c_bw_corr_.AddDiagMatMat(1.0, bDI.RowRange(1*S,T*S), kTrans, bYC.RowRange(2*S,T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[10]);
+      cublasSetStream(GetCublasHandle(),stream[10]);
       phole_f_c_bw_corr_.AddDiagMatMat(1.0, bDF.RowRange(1*S,T*S), kTrans, bYC.RowRange(2*S,T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[11]);
+      cublasSetStream(GetCublasHandle(),stream[11]);
       phole_o_c_bw_corr_.AddDiagMatMat(1.0, bDO.RowRange(1*S,T*S), kTrans, bYC.RowRange(1*S,T*S), kNoTrans, mmt);
       //cudaDeviceSynchronize();
       for(int i =0; i< 12;i++){
        //destroy streams
         cudaStreamDestroy( stream[i] ) ;
       }
-      cublasSetKernelStream(NULL);
+      cublasSetStream(GetCublasHandle(),NULL);
     }
 
     void BackpropagateFncRecurrentDropoutFast(const CuMatrixBase<BaseFloat> &in, const CuMatrixBase<BaseFloat> &out_diff_drop,
@@ -554,11 +551,17 @@ public:
       bDM.RowRange(1*S, T*S).CopyFromMat(out_diff_drop.ColRange(cell_dim_, cell_dim_));
 
       CuSubMatrix<BaseFloat> fr_mask, br_mask;
+      CuSubMatrix<BaseFloat> fr_mask_seq, br_mask_seq;
 
       // point the mask to the correct position
+      if (recurrent_sequence_dropout || recurrent_step_dropout) {
+          fr_mask_seq =  recurrent_drop_mask_.ColRange(0, cell_dim_);
+          br_mask_seq =  recurrent_drop_mask_.ColRange(1 * cell_dim_, cell_dim_);        
+      }
+      
       if (recurrent_sequence_dropout) {
-        fr_mask =  recurrent_drop_mask_fw_;
-        br_mask =  recurrent_drop_mask_bw_;
+          fr_mask = fr_mask_seq;
+          br_mask = br_mask_seq;
       }
 
       for (int bt = 1, ft = T; bt <= T && ft >=1; bt++, ft--) {
@@ -609,14 +612,14 @@ public:
 
         // point the mask to the correct position
         if (recurrent_step_dropout) {
-          fr_mask =  recurrent_drop_mask_fw_.RowRange(ft*S,S);
-          br_mask =  recurrent_drop_mask_bw_.RowRange(bt*S,S);
+          fr_mask =  fr_mask_seq.RowRange(ft*S,S);
+          br_mask =  br_mask_seq.RowRange(bt*S,S);
         }
 
         // d_m comes from two parts: errors from the upper layer and errors from the following frame (t+1)
-        cublasSetKernelStream(stream[0]);
+        cublasSetStream(GetCublasHandle(),stream[0]);
         fd_m.AddMatMat(1.0, fDGIFO.RowRange((ft+1)*S,S), kNoTrans, wei_gifo_m_fw_, kNoTrans, 1.0);
-        cublasSetKernelStream(stream[1]);
+        cublasSetStream(GetCublasHandle(),stream[1]);
         bd_m.AddMatMat(1.0, bDGIFO.RowRange((bt-1)*S,S), kNoTrans, wei_gifo_m_bw_, kNoTrans, 1.0);
 
         BackpropagatePointwiseOpsLSTM(fy_i, fy_f, fy_g, fy_o, fy_c, fy_h, fy_m,
@@ -637,40 +640,40 @@ public:
 
       }  // end of t
 
-      cublasSetKernelStream(NULL);
+      cublasSetStream(GetCublasHandle(),NULL);
       //  updates to the model parameters
       const BaseFloat mmt = opts_.momentum;
-      cublasSetKernelStream(stream[0]);
+      cublasSetStream(GetCublasHandle(),stream[0]);
       wei_gifo_x_fw_corr_.AddMatMat(1.0, fDGIFO.RowRange(1*S, T*S), kTrans, in, kNoTrans, mmt);
-      cublasSetKernelStream(stream[1]);
+      cublasSetStream(GetCublasHandle(),stream[1]);
       wei_gifo_m_fw_corr_.AddMatMat(1.0, fDGIFO.RowRange(1*S, T*S), kTrans, fYM.RowRange(0*S,T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[2]);
+      cublasSetStream(GetCublasHandle(),stream[2]);
       bias_fw_corr_.AddRowSumMat(1.0, fDGIFO.RowRange(1*S, T*S), mmt);
-      cublasSetKernelStream(stream[3]);
+      cublasSetStream(GetCublasHandle(),stream[3]);
       phole_i_c_fw_corr_.AddDiagMatMat(1.0, fDI.RowRange(1*S, T*S), kTrans, fYC.RowRange(0*S, T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[4]);
+      cublasSetStream(GetCublasHandle(),stream[4]);
       phole_f_c_fw_corr_.AddDiagMatMat(1.0, fDF.RowRange(1*S, T*S), kTrans, fYC.RowRange(0*S, T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[5]);
+      cublasSetStream(GetCublasHandle(),stream[5]);
       phole_o_c_fw_corr_.AddDiagMatMat(1.0, fDO.RowRange(1*S, T*S), kTrans, fYC.RowRange(1*S, T*S), kNoTrans, mmt);
       // updates to the parameters
-      cublasSetKernelStream(stream[6]);
+      cublasSetStream(GetCublasHandle(),stream[6]);
       wei_gifo_x_bw_corr_.AddMatMat(1.0, bDGIFO.RowRange(1*S,T*S), kTrans, in, kNoTrans, mmt);
-      cublasSetKernelStream(stream[7]);
+      cublasSetStream(GetCublasHandle(),stream[7]);
       wei_gifo_m_bw_corr_.AddMatMat(1.0, bDGIFO.RowRange(1*S,T*S), kTrans, bYM.RowRange(2*S,T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[8]);
+      cublasSetStream(GetCublasHandle(),stream[8]);
       bias_bw_corr_.AddRowSumMat(1.0, bDGIFO.RowRange(1*S,T*S), mmt);
-      cublasSetKernelStream(stream[9]);
+      cublasSetStream(GetCublasHandle(),stream[9]);
       phole_i_c_bw_corr_.AddDiagMatMat(1.0, bDI.RowRange(1*S,T*S), kTrans, bYC.RowRange(2*S,T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[10]);
+      cublasSetStream(GetCublasHandle(),stream[10]);
       phole_f_c_bw_corr_.AddDiagMatMat(1.0, bDF.RowRange(1*S,T*S), kTrans, bYC.RowRange(2*S,T*S), kNoTrans, mmt);
-      cublasSetKernelStream(stream[11]);
+      cublasSetStream(GetCublasHandle(),stream[11]);
       phole_o_c_bw_corr_.AddDiagMatMat(1.0, bDO.RowRange(1*S,T*S), kTrans, bYC.RowRange(1*S,T*S), kNoTrans, mmt);
       //cudaDeviceSynchronize();
       for(int i =0; i< 12;i++){
        //destroy streams
         cudaStreamDestroy( stream[i] ) ;
       }
-      cublasSetKernelStream(NULL);
+      cublasSetStream(GetCublasHandle(),NULL);
     }
 
 
@@ -709,7 +712,7 @@ public:
         BackpropagateFncVanillaFast(in, out_diff_drop, in_diff, T, S);
       }
 
-      cublasSetKernelStream(NULL);
+      cublasSetStream(GetCublasHandle(),NULL);
 
       // errors back-propagated to the inputs
       CuSubMatrix<BaseFloat> DGIFO_FW(backpropagate_buf_fw_.ColRange(0, 4 * cell_dim_));

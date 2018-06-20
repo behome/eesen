@@ -1,6 +1,6 @@
 #if HAVE_CUDA == 1
 #include <cuda_runtime_api.h>
-#include <cublas.h>
+#include <cublas_v2.h>
 #endif
 
 #include "base/timer.h"
@@ -8,7 +8,6 @@
 #include "gpucompute/cuda-vector.h"
 #include "gpucompute/cuda-device.h"
 #include "gpucompute/cuda-kernels-wrappers.h"
-#include "gpucompute/cuda-randkernels-wrappers.h"
 #include "gpucompute/cuda-math.h"
 #include "gpucompute/cuda-vector.h"
 #include "gpucompute/cuda-matrix.h"
@@ -306,10 +305,11 @@ void CuVectorBase<Real>::AddMatVec(const Real alpha,
 
     // Everything is backwards in CuBlas.  We need to reverse rows, columns,
     // transpose-ness.
-    cublas_gemv((trans==kTrans?'N':'T'), M.NumCols(), M.NumRows(), alpha,
-                M.Data(), M.Stride(), v.Data(), 1, beta, data_, 1);
+    CUBLAS_SAFE_CALL(cublas_gemv(GetCublasHandle(),
+                  (trans==kTrans? CUBLAS_OP_N:CUBLAS_OP_T),
+                  M.NumCols(), M.NumRows(), alpha, M.Data(),
+                  M.Stride(), v.Data(), 1, beta, data_, 1));
 
-    CU_SAFE_CALL(cublasGetError());
     CuDevice::Instantiate().AccuProfile(__func__, tim.Elapsed());
   } else
 #endif
@@ -786,9 +786,11 @@ void CuVectorBase<Real>::AddVec(Real alpha, const CuVectorBase<Real> &vec,
     int32 dim = this->dim_;
     Real *data = this->data_;
     const Real *vec_data = vec.data_;
-    if (beta != 1.0) cuda_scal(dim, beta, data, 1);
-    if (alpha != 0.0) cuda_axpy(dim, alpha, vec_data, 1, data, 1);
-    CU_SAFE_CALL(cudaGetLastError());    
+    if (beta != 1.0) 
+      CUBLAS_SAFE_CALL(cublas_scal(GetCublasHandle(), dim, beta, data, 1));
+    if (alpha != 0.0) 
+      CUBLAS_SAFE_CALL(cublas_axpy(GetCublasHandle(), dim, alpha, vec_data, 1, data, 1));
+
     CuDevice::Instantiate().AccuProfile(__func__, tim.Elapsed());
   } else
   #endif

@@ -23,7 +23,7 @@
 
 #if HAVE_CUDA == 1
 
-#include <cublas.h>
+#include <cublas_v2.h>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
@@ -96,8 +96,7 @@ void CuDevice::SelectGpuId(std::string use_gpu) {
   // or default gpu_id=0. In the case with no free GPUs a context cannot be created
   // (compute-exclusive mode).
   //
-  cudaError_t e;
-  e = cudaThreadSynchronize(); //<< CUDA context gets created here.
+  cudaError_t e = cudaDeviceSynchronize(); //<< CUDA context gets created here.
 
   if (use_gpu != "wait") {
     if (e != cudaSuccess) {
@@ -107,7 +106,7 @@ void CuDevice::SelectGpuId(std::string use_gpu) {
         << " seconds.";
       sleep(sec_sleep);
       cudaGetLastError(); // reset the error state    
-      e = cudaThreadSynchronize(); //<< 2nd trial to get CUDA context.
+      e = cudaDeviceSynchronize(); //<< 2nd trial to get CUDA context.
       if (e != cudaSuccess) {
         if (use_gpu == "yes") {
           KALDI_ERR << "Failed to create CUDA context, no more unused GPUs?";
@@ -130,7 +129,7 @@ void CuDevice::SelectGpuId(std::string use_gpu) {
       wait_time += sec_sleep;
       sleep(sec_sleep);
       cudaGetLastError(); // reset the error state    
-      e = cudaThreadSynchronize();
+      e = cudaDeviceSynchronize();
     }
 
     KALDI_WARN << "Waited " << wait_time
@@ -138,7 +137,7 @@ void CuDevice::SelectGpuId(std::string use_gpu) {
   }
 
   // Re-assure we have the context
-  KALDI_ASSERT(cudaSuccess == cudaThreadSynchronize());
+  KALDI_ASSERT(cudaSuccess == cudaDeviceSynchronize());
 
   // Check if the machine use compute exclusive mode 
   if (IsComputeExclusive()) {
@@ -175,15 +174,14 @@ void CuDevice::FinalizeActiveGpu() {
   // Get the device-id of active device:
   {
     int32 act_gpu_id;
-    cudaError_t e;
-    e = cudaGetDevice(&act_gpu_id);
+    cudaError_t e = cudaGetDevice(&act_gpu_id);
     if(e != cudaSuccess) {
       KALDI_ERR << "Failed to get device-id of active device.";
     }
     // Remember the id of active GPU 
     active_gpu_id_ = act_gpu_id; //CuDevice::Enabled() is true from now on
     // Initialize the CUBLAS
-    CU_SAFE_CALL(cublasInit());
+    CUBLAS_SAFE_CALL(cublasCreate(&handle_));
 
     // Notify user which GPU is finally used
     char name[128];
@@ -210,7 +208,7 @@ bool CuDevice::DoublePrecisionSupported() {
 
 bool CuDevice::IsComputeExclusive() {
   // assume we already have an CUDA context created
-  KALDI_ASSERT(cudaSuccess == cudaThreadSynchronize());
+  KALDI_ASSERT(cudaSuccess == cudaDeviceSynchronize());
 
   // get the device-id and its device-properties
   int32 gpu_id = -1;
@@ -265,7 +263,7 @@ bool CuDevice::SelectGpuIdAuto() {
     switch(ret) {
       case cudaSuccess : {
         //create the CUDA context for the thread
-        cudaThreadSynchronize(); //deprecated, but for legacy not cudaDeviceSynchronize
+        cudaDeviceSynchronize(); //deprecated, but for legacy not cudaDeviceSynchronize
         //get GPU name
         char name[128];
         DeviceGetName(name,128,n);
@@ -311,7 +309,7 @@ bool CuDevice::SelectGpuIdAuto() {
   CU_SAFE_CALL(cudaSetDevice(max_id));
   //create the context
   cudaError_t e;
-  e = cudaThreadSynchronize(); //deprecated, but for legacy not cudaDeviceSynchronize
+  e = cudaDeviceSynchronize(); //deprecated, but for legacy not cudaDeviceSynchronize
   if(e != cudaSuccess) {
     KALDI_WARN << "Failed to create CUDA context on a GPU.";
     return false;
@@ -839,7 +837,7 @@ CuDevice::~CuDevice() {
   if (allocator_ != NULL)
     delete allocator_;
   if (Enabled())
-    CU_SAFE_CALL(cublasShutdown());
+    cublasDestroy(handle_);
 }
   
 // The instance of the static singleton 

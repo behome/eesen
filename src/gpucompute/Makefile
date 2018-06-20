@@ -16,7 +16,7 @@ TESTFILES =
 
 OBJFILES = cuda-device.o cuda-math.o cuda-matrix.o cuda-vector.o cuda-common.o cuda-rand.o
 ifeq ($(CUDA), true)
-  OBJFILES += cuda-kernels.o cuda-randkernels.o
+  OBJFILES += cuda-kernels.o #cuda-randkernels.o
 endif
 
 LIBNAME = gpucompute

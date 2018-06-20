@@ -1061,6 +1061,7 @@ protected:
 
     CuMatrix<BaseFloat> recurrent_drop_mask_fw_;
     CuMatrix<BaseFloat> recurrent_drop_mask_bw_;
+    CuMatrix<BaseFloat> recurrent_drop_mask_;
     Matrix<BaseFloat> recurrent_drop_mask_cpu_;
 
     CuMatrix<BaseFloat> d_h_mask;
